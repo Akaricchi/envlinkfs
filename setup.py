@@ -7,7 +7,7 @@ setup(
     version_format='{tag}.dev{commitcount}+{gitsha}',
     description='FUSE filesystem that exposes environment variables as symbolic links',
     url='https://github.com/Akaricchi/envlinkfs',
-    author='Andrey Alexeyev',
+    author='Andrei Alexeyev',
     author_email='akari@alienslab.net',
     license='WTFPL',
     py_modules=['envlinkfs'],
