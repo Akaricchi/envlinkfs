@@ -116,64 +116,68 @@ class EnvLinkFS(Operations):
             raise FuseOSError(errno.ENOENT)
 
 
-class DirectFUSE(FUSE):
-
-    '''
-    Partial copypaste and simplification of the FUSE.__init__ method.
-    This lets us pass arguments to FUSE directly on the command line.
-    '''
-
-    def __init__(self, operations, args, raw_fi=False, encoding='utf-8'):
-        '''
-        Setting raw_fi to True will cause FUSE to pass the fuse_file_info
-        class as is to Operations, instead of just the fh field.
-        This gives you access to direct_io, keep_cache, etc.
-        '''
-
-        self.operations = operations
-        self.raw_fi = raw_fi
-        self.encoding = encoding
-
-        args = [arg.encode(encoding) for arg in args]
-        argv = (ctypes.c_char_p * len(args))(*args)
-
-        fuse_ops = fuse.fuse_operations()
-        for ent in fuse.fuse_operations._fields_:
-            name, prototype = ent[:2]
-
-            val = getattr(operations, name, None)
-            if val is None:
-                continue
-
-            # Function pointer members are tested for using the
-            # getattr(operations, name) above but are dynamically
-            # invoked using self.operations(name)
-            if hasattr(prototype, 'argtypes'):
-                val = prototype(functools.partial(self._wrapper, getattr(self, name)))
-
-            setattr(fuse_ops, name, val)
-
-        try:
-            old_handler = signal(SIGINT, SIG_DFL)
-        except ValueError:
-            old_handler = SIG_DFL
-
-        err = fuse._libfuse.fuse_main_real(
-            len(args), argv, ctypes.pointer(fuse_ops), ctypes.sizeof(fuse_ops), None)
-
-        try:
-            signal(SIGINT, old_handler)
-        except ValueError:
-            pass
-
-        del self.operations     # Invoke the destructor
-
-        if err:
-            quit(err)
-
-
 def main():
-    DirectFUSE(EnvLinkFS(), sys.argv)
+    import argparse
+
+    p = argparse.ArgumentParser()
+
+    p.add_argument('fsname',
+        metavar='FSNAME',
+        help="name of the filesystem (shows up in 'mount')"
+    )
+
+    p.add_argument('mountpoint',
+        metavar='MOUNTPOINT',
+        help="where to mount the filesystem",
+    )
+
+    p.add_argument('-f', '--foreground',
+        action='store_true',
+        help="foreground operation"
+    )
+
+    p.add_argument('-d', '--debug',
+        action='store_true',
+        help="enable debug output (implies -f)"
+    )
+
+    p.add_argument('-s', '--single-thread',
+        action='store_true',
+        help="disable multi-threaded operation"
+    )
+
+    p.add_argument('-o', '--options',
+        metavar='OPTIONS',
+        default='',
+        help="FUSE mount options"
+    )
+
+    args = p.parse_args()
+    kwargs = {}
+
+    # parse the option string into key:value pairs...
+    # ... which fusepy will then un-parse back into an option string,
+    # and pass it to fuse_main
+    #
+    # *headdesk*
+
+    for opt in args.options.split(','):
+        if '=' in opt:
+            key, val = opt.split('=', 1)
+            kwargs[key] = val
+        else:
+            kwargs[opt] = True
+
+    kwargs['fsname'] = args.fsname
+
+    FUSE(
+        operations=EnvLinkFS(),
+        mountpoint=args.mountpoint,
+        foreground=args.foreground,
+        debug=args.debug,
+        nothreads=args.single_thread,
+        **kwargs
+    )
 
 if __name__ == '__main__':
     main()
