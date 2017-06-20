@@ -1,12 +1,8 @@
 #!/usr/bin/env python3
 
 import os
-import sys
 import errno
 import stat
-import ctypes
-import fuse
-import functools
 import contextlib
 
 from fuse import (
@@ -16,11 +12,30 @@ from fuse import (
     fuse_get_context,
 )
 
-from signal import signal, SIGINT, SIG_DFL
-
 
 proc_env_cache = {}
 proc_env_cache_times = {}
+
+
+def remap_pid(pid):
+    with open('/proc/%d/status' % pid) as sfile:
+        status = dict(i.split(':\t') for i in filter(None, sfile.read().split('\n')))
+
+    try:
+        if (status['voluntary_ctxt_switches']    == '1' and
+            status['nonvoluntary_ctxt_switches'] in ('0', '1')):
+
+            # looks like the process just forked from another one
+            # reading from its environ at this point will block forever
+
+            # try to use the parent process instead
+            # far from ideal, but should work in most cases...
+
+            return int(status['PPid'])
+    except KeyError:
+        pass
+
+    return pid
 
 
 def read_proc_env(path):
@@ -41,6 +56,7 @@ def cache_proc_env(pid, path, mtime):
 def get_proc_env(pid):
     # XXX: Linux-like procfs on /proc required
 
+    pid = remap_pid(pid)
     epath = '/proc/%d/environ' % pid
 
     try:
