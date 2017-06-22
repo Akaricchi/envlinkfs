@@ -53,10 +53,9 @@ def cache_proc_env(pid, path, mtime):
     return e
 
 
-def get_proc_env(pid):
+def get_proc_env(pid, try_remap=True):
     # XXX: Linux-like procfs on /proc required
 
-    pid = remap_pid(pid)
     epath = '/proc/%d/environ' % pid
 
     try:
@@ -70,12 +69,13 @@ def get_proc_env(pid):
 
         return {}
 
-    try:
-        cached_mtime = proc_env_cache_times[pid]
-    except KeyError:
-        return cache_proc_env(pid, epath, estat.st_mtime)
+    if proc_env_cache_times.get(pid, -1) != estat.st_mtime:
+        if try_remap:
+            pid_remapped = remap_pid(pid)
 
-    if cached_mtime != estat.st_mtime:
+            if pid_remapped != pid:
+                return get_proc_env(pid_remapped, False)
+
         return cache_proc_env(pid, epath, estat.st_mtime)
 
     return proc_env_cache[pid]
